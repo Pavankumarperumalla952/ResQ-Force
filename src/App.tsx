@@ -6,7 +6,8 @@ import {
   RoadSegmentStatus,
   DecisionLogEntry,
   RouteNavigationStep,
-  Severity
+  Severity,
+  EmergencyStatus
 } from './types';
 import {
   VERIFIED_HOSPITALS,
@@ -172,18 +173,34 @@ export default function App() {
     showToast(nowBlocked ? `Road blocked: ${rbName}. Detours active.` : `Road reopened: ${rbName}.`);
   };
 
-  // Patient Requests an Ambulance (Rapido-style)
+  // Live location update streamed by watchPosition from patient device
+  const handleUpdatePatientLiveLocation = (requestId: string, lat: number, lng: number, accuracy?: number) => {
+    setPatients(prev =>
+      prev.map(p => (p.id === requestId ? { ...p, lat, lng, accuracyMeters: accuracy } : p))
+    );
+    setUserGpsLocation([lat, lng]);
+  };
+
+  // Patient Requests an Ambulance (SOS / Rapido-style)
   const handleRequestAmbulance = (data: {
+    id: string;
     patientName: string;
     contactPhone: string;
     emergencyType: string;
     severity: Severity;
     landmark: string;
+    address?: string;
     lat: number;
     lng: number;
+    accuracyMeters?: number;
+    requestSource: string;
+    requestDateTime: string;
+    initialStatus: EmergencyStatus;
   }) => {
-    // 1. Create patient record
-    const id = `EMG-VZM-0${patients.length + 1}`;
+    const id = data.id || `SOS-VZM-0${patients.length + 1}`;
+    setUserGpsLocation([data.lat, data.lng]);
+
+    // 1. Create patient record with initial 'SOS REQUESTED' status
     const newPatient: PatientEmergencyRequest = {
       id,
       patientName: data.patientName,
@@ -195,50 +212,75 @@ export default function App() {
       landmark: data.landmark,
       lat: data.lat,
       lng: data.lng,
-      status: 'searching',
+      status: data.initialStatus || 'SOS REQUESTED',
       createdAt: 'Just now',
+      requestSource: data.requestSource || 'Patient Emergency SOS',
+      requestDateTime: data.requestDateTime,
+      accuracyMeters: data.accuracyMeters,
       isLiveUserLocation: true
     };
 
-    // 2. Rank nearby ambulances in Vizianagaram
-    const rankedAmbs = rankNearbyAmbulances(newPatient, ambulances, roadBlocks);
-    const bestMatch = rankedAmbs[0];
-
-    // 3. Rank hospitals
-    const rankedHosps = evaluateHospitalMatching(newPatient, hospitals, roadBlocks);
-    const bestHosp = hospitals.find(h => h.id === rankedHosps[0]?.hospitalId) || hospitals[0];
-
-    if (bestMatch) {
-      newPatient.status = 'assigned';
-      newPatient.assignedAmbulanceId = bestMatch.ambulance.id;
-      newPatient.assignedHospitalId = bestHosp.id;
-      newPatient.assignedDriverName = bestMatch.ambulance.driverName;
-      newPatient.assignedDriverPhone = bestMatch.ambulance.driverPhone;
-      newPatient.assignedVehicleNo = bestMatch.ambulance.vehicleNumber;
-      newPatient.ambulanceType = bestMatch.ambulance.type;
-      newPatient.etaMinutes = bestMatch.etaMinutes;
-      newPatient.roadDistanceKm = bestMatch.distanceKm;
-
-      // Update ambulance status
-      setAmbulances(prev =>
-        prev.map(a => (a.id === bestMatch.ambulance.id ? { ...a, status: 'assigned', assignedIncidentId: id } : a))
-      );
-
-      // Trigger hands-free voice notification
-      voiceAssistant.speak(
-        `Critical emergency alert for unit ${bestMatch.ambulance.vehicleNumber}. Patient at ${data.landmark}. Condition: ${data.emergencyType}.`,
-        true
-      );
-
-      addLog('Dispatched', '#10B981', `Ambulance ${bestMatch.ambulance.vehicleNumber} (${bestMatch.ambulance.type}) assigned to ${id} at ${data.landmark}.`);
-      showToast(`Nearest Ambulance found: ${bestMatch.ambulance.vehicleNumber} (${bestMatch.etaMinutes} min away).`);
-    } else {
-      addLog('SOS Ingested', '#EF4444', `All units engaged in Vizianagaram. Request ${id} placed in automated queue.`);
-      showToast('All ambulances currently engaged. Request placed in emergency priority queue.');
-    }
-
     setPatients(prev => [newPatient, ...prev]);
     setSelectedPatientId(id);
+
+    addLog('SOS Ingested', '#EF4444', `[${data.requestSource}] ${id} registered for ${data.patientName}. Live GPS coordinates: ${data.lat.toFixed(5)}° N, ${data.lng.toFixed(5)}° E (${data.landmark}).`);
+    showToast(`Emergency SOS ${id} logged. Transmitting to Vizianagaram Dispatch Ops...`);
+
+    // 2. Realistic dispatch handshake: Transitions to 'REQUEST RECEIVED', then finds best match
+    setTimeout(() => {
+      // Step A: Request Received by Dispatch
+      setPatients(prev =>
+        prev.map(p => (p.id === id ? { ...p, status: 'REQUEST RECEIVED' } : p))
+      );
+      addLog('Approved', '#3B82F6', `Dispatch received ${id}. Searching nearby ALS/BLS ambulances in Vizianagaram...`);
+
+      setTimeout(() => {
+        // Step B: Match nearest capable ambulance and destination hospital
+        const rankedAmbs = rankNearbyAmbulances(newPatient, ambulances, roadBlocks);
+        const bestMatch = rankedAmbs[0];
+        const rankedHosps = evaluateHospitalMatching(newPatient, hospitals, roadBlocks);
+        const bestHosp = hospitals.find(h => h.id === rankedHosps[0]?.hospitalId) || hospitals[0];
+
+        if (bestMatch) {
+          setPatients(prev =>
+            prev.map(p => {
+              if (p.id === id) {
+                return {
+                  ...p,
+                  status: 'AMBULANCE ASSIGNED',
+                  assignedAmbulanceId: bestMatch.ambulance.id,
+                  assignedHospitalId: bestHosp.id,
+                  assignedDriverName: bestMatch.ambulance.driverName,
+                  assignedDriverPhone: bestMatch.ambulance.driverPhone,
+                  assignedVehicleNo: bestMatch.ambulance.vehicleNumber,
+                  ambulanceType: bestMatch.ambulance.type,
+                  etaMinutes: bestMatch.etaMinutes,
+                  roadDistanceKm: bestMatch.distanceKm
+                };
+              }
+              return p;
+            })
+          );
+
+          // Update ambulance status
+          setAmbulances(prev =>
+            prev.map(a => (a.id === bestMatch.ambulance.id ? { ...a, status: 'assigned', assignedIncidentId: id } : a))
+          );
+
+          // Voice alert to driver
+          voiceAssistant.speak(
+            `New emergency request received. Patient location: ${data.landmark}. Condition: ${data.emergencyType}.`,
+            true
+          );
+
+          addLog('Dispatched', '#10B981', `Ambulance ${bestMatch.ambulance.vehicleNumber} (${bestMatch.ambulance.type}) assigned to ${id} at ${data.landmark}. ETA: ${bestMatch.etaMinutes} mins.`);
+          showToast(`Ambulance Assigned: ${bestMatch.ambulance.vehicleNumber} (${bestMatch.etaMinutes} min away).`);
+        } else {
+          addLog('SOS Ingested', '#EF4444', `All units engaged in Vizianagaram. Emergency request ${id} placed in automated escalation queue.`);
+          showToast('All ambulances currently engaged. Request placed in emergency priority queue. Dial 108 if needed.');
+        }
+      }, 700);
+    }, 700);
   };
 
   // Driver Accepts Emergency
@@ -246,7 +288,7 @@ export default function App() {
     setPatients(prev =>
       prev.map(p => {
         if (p.id === incidentId) {
-          return { ...p, status: 'en_route_pickup' };
+          return { ...p, status: 'AMBULANCE EN ROUTE' };
         }
         return p;
       })
@@ -262,7 +304,7 @@ export default function App() {
     );
 
     addLog('Approved', '#10B981', `Driver accepted ${incidentId}. En route with siren to pickup.`);
-    showToast('Dispatch accepted. Navigation route is live.');
+    showToast('Dispatch accepted. Ambulance en route with siren.');
   };
 
   // Driver Declines / Timeout Escalation
@@ -585,13 +627,14 @@ export default function App() {
         <PatientEmergencyView
           ambulances={ambulances}
           hospitals={hospitals}
-          activeRequest={patients.find(p => p.isLiveUserLocation) || null}
+          activeRequest={patients.find(p => p.isLiveUserLocation && p.status !== 'completed' && p.status !== 'cancelled') || null}
           onRequestAmbulance={handleRequestAmbulance}
           onCancelRequest={handleCancelRequest}
           onSelectAmbulance={amb => {
             setSelectedAmbulanceId(amb.id);
             setActiveTab('command');
           }}
+          onUpdateLiveLocation={handleUpdatePatientLiveLocation}
         />
       ) : activeTab === 'driver' ? (
         <DriverDashboardView

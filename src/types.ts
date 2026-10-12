@@ -1,6 +1,11 @@
 export type Severity = 'CRITICAL' | 'SERIOUS' | 'MODERATE' | 'MINOR';
 
 export type EmergencyStatus =
+  | 'SOS REQUESTED'
+  | 'REQUEST RECEIVED'
+  | 'AMBULANCE ASSIGNED'
+  | 'AMBULANCE EN ROUTE'
+  | 'ARRIVED'
   | 'searching'
   | 'assigned'
   | 'driver_accepted'
@@ -62,6 +67,9 @@ export interface PatientEmergencyRequest {
   lng: number;
   status: EmergencyStatus;
   createdAt: string;
+  requestSource?: string;
+  requestDateTime?: string;
+  accuracyMeters?: number;
   assignedAmbulanceId?: string;
   assignedHospitalId?: string;
   assignedDriverName?: string;

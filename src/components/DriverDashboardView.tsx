@@ -27,9 +27,9 @@ export const DriverDashboardView: React.FC<DriverDashboardViewProps> = ({
   const [isMuted, setIsMuted] = useState<boolean>(voiceAssistant.getMuted());
   const [currentStepIdx, setCurrentStepIdx] = useState<number>(0);
 
-  // Auto decline timeout countdown if in 'assigned' pending state
+  // Auto decline timeout countdown if in 'assigned' or 'AMBULANCE ASSIGNED' pending state
   useEffect(() => {
-    if (!activeEmergency || activeEmergency.status !== 'assigned') {
+    if (!activeEmergency || (activeEmergency.status !== 'assigned' && activeEmergency.status !== 'AMBULANCE ASSIGNED')) {
       setCountdown(25);
       return;
     }
@@ -214,7 +214,7 @@ export const DriverDashboardView: React.FC<DriverDashboardViewProps> = ({
       </div>
 
       {/* INCOMING EMERGENCY OFFER CARD (With 25-Second Rapid Accept Timer) */}
-      {activeEmergency && activeEmergency.status === 'assigned' && (
+      {activeEmergency && (activeEmergency.status === 'assigned' || activeEmergency.status === 'AMBULANCE ASSIGNED') && (
         <div
           style={{
             background: '#FFFFFF',
@@ -330,7 +330,14 @@ export const DriverDashboardView: React.FC<DriverDashboardViewProps> = ({
       )}
 
       {/* ACTIVE EMERGENCY NAVIGATION HUD (When driver is en route) */}
-      {activeEmergency && activeEmergency.status !== 'assigned' && activeEmergency.status !== 'searching' && (
+      {activeEmergency &&
+        activeEmergency.status !== 'assigned' &&
+        activeEmergency.status !== 'AMBULANCE ASSIGNED' &&
+        activeEmergency.status !== 'searching' &&
+        activeEmergency.status !== 'SOS REQUESTED' &&
+        activeEmergency.status !== 'REQUEST RECEIVED' &&
+        activeEmergency.status !== 'completed' &&
+        activeEmergency.status !== 'cancelled' && (
         <div style={{ background: '#FFFFFF', border: '1px solid #D3E5DC', borderRadius: '20px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
           {/* Turn-by-Turn Instruction Banner */}
           {currentStep && (
@@ -367,13 +374,27 @@ export const DriverDashboardView: React.FC<DriverDashboardViewProps> = ({
               <button
                 type="button"
                 onClick={() => handleStepAdvance('arrived_scene')}
-                disabled={activeEmergency.status !== 'en_route_pickup' && activeEmergency.status !== 'driver_accepted'}
+                disabled={
+                  activeEmergency.status !== 'en_route_pickup' &&
+                  activeEmergency.status !== 'driver_accepted' &&
+                  activeEmergency.status !== 'AMBULANCE EN ROUTE'
+                }
                 style={{
                   height: '52px',
                   borderRadius: '12px',
                   border: 0,
-                  background: activeEmergency.status === 'en_route_pickup' || activeEmergency.status === 'driver_accepted' ? '#22C58B' : '#F3F8F5',
-                  color: activeEmergency.status === 'en_route_pickup' || activeEmergency.status === 'driver_accepted' ? '#04130D' : '#9CA3AF',
+                  background:
+                    activeEmergency.status === 'en_route_pickup' ||
+                    activeEmergency.status === 'driver_accepted' ||
+                    activeEmergency.status === 'AMBULANCE EN ROUTE'
+                      ? '#22C58B'
+                      : '#F3F8F5',
+                  color:
+                    activeEmergency.status === 'en_route_pickup' ||
+                    activeEmergency.status === 'driver_accepted' ||
+                    activeEmergency.status === 'AMBULANCE EN ROUTE'
+                      ? '#04130D'
+                      : '#9CA3AF',
                   fontWeight: 800,
                   fontSize: '14px',
                   cursor: 'pointer'
@@ -385,13 +406,13 @@ export const DriverDashboardView: React.FC<DriverDashboardViewProps> = ({
               <button
                 type="button"
                 onClick={() => handleStepAdvance('in_transit_hospital')}
-                disabled={activeEmergency.status !== 'arrived_scene'}
+                disabled={activeEmergency.status !== 'arrived_scene' && activeEmergency.status !== 'ARRIVED'}
                 style={{
                   height: '52px',
                   borderRadius: '12px',
                   border: 0,
-                  background: activeEmergency.status === 'arrived_scene' ? '#0E9F6E' : '#F3F8F5',
-                  color: activeEmergency.status === 'arrived_scene' ? '#FFFFFF' : '#9CA3AF',
+                  background: activeEmergency.status === 'arrived_scene' || activeEmergency.status === 'ARRIVED' ? '#0E9F6E' : '#F3F8F5',
+                  color: activeEmergency.status === 'arrived_scene' || activeEmergency.status === 'ARRIVED' ? '#FFFFFF' : '#9CA3AF',
                   fontWeight: 800,
                   fontSize: '14px',
                   cursor: 'pointer'
