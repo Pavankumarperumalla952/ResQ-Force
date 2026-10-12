@@ -1,0 +1,6 @@
+{
+  "name": "ResQNet Force",
+  "description": "Emergency Coordination & Intelligent Ambulance Dispatch System",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
